@@ -1,0 +1,39 @@
+# Example configuration for nginx virtual host
+
+upstream jsonfarm{
+	server		127.0.0.1:9000;
+	server		192.168.0.5:9000;
+}
+
+# simple reverse-proxy
+server {
+	listen		192.168.0.1:80;
+
+	server_name	www.domain.com domain.com;
+
+#	location ~ ^/(images|uploads)/ {
+#		root	/www/domain.com/;
+#		expires	2d;
+#	}
+
+	location ~* ^.+\.(jpg|jpeg|gif|png|bmp|ico|css|js|txt|xhtml|xhtm|pdf|wav|mp3|flv|swf|zip|rar|tgz|tar|gz|bz2)$ {
+		root	/www/www/domain.com/;
+		expires	2d;
+	}
+
+	# pass requests	for dynamic content to backend
+	# Assume we have Apache/PHP here;
+	location / {
+		proxy_pass	http://127.0.0.1:80;
+	}
+
+	# pass requests	for dynamic content to backend
+	# Assume we have Micro HTTPD here;
+	location /json/	{
+		gzip		off;
+
+		proxy_pass	http://jsonfarm;
+	}
+}
+
+

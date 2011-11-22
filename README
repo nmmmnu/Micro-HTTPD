@@ -1,0 +1,200 @@
+============================================================
+Micro HTTPD is very simple HTTP (web) server written in PHP.
+============================================================
+
+THE IDEA:
+
+The idea behind is similar to node.js - to have an application that runs like a web server on some port.
+
+Very often there are a websites that contain very limited - 1 or 2 or 3 PHP files.
+Here is where Micro HTTPD is much more faster than "normal" webservers such Apache.
+
+Apache have huge memory footprint and nginx / Lighttpd uses buggy Fast-CGI.
+I do not say Fast-CGI is buggy, but I was unable to find stable working PHP Fast-CGI implementation.
+
+Instead of serving files, each URL of the server is call to PHP function.
+This means that the server is as secure as this functions are made.
+
+============================================
+
+ARCHITECTURE:
+
+The server is so called pre-fork()-ing server. This same architecture is used by Apache server.
+At the beginning it will fork() several child workers processes, 
+then those workers "process" client by client. Each workers is single threaded.
+This means you can open MySQL connection and to keep reusing it, without reconnect.
+
+In case some of the workers crash or you call exit(), the master process will fork() another worker.
+I also implemented Apache like "MaxRequestPerChild" - worker will exit after processing so many clients.
+
+
+
+Keep-Alive is not supported.
+
+
+
+Because susally this server will be used for simple tasks, I did not implemented POST method, 
+nor there are "Host" header - e.g. virtual hosts.
+
+However GET method may "get" huge query_string - 10 KB or more (configurable), 
+and if you need virtual hosts, you can always start several servers on several ports.
+
+
+
+Server does not deal with "trailing slash problem".
+You should always request "directories" with / at the end.
+
+http://domain.com/dir  - this is like a file.      
+                         All HTML links will be open as http://domain.com/link.htm
+http://domain.com/dir/ - this is like a directory. 
+                         All HTML links will be open as http://domain.com/dir/link.htm
+
+
+
+Why not select()?
+
+I found very good working code of select() based server. However, unless Keep-Alive is implemented,
+there is no sence in doing select(), because we have many single threaded workers anyway and 
+the speed will not be increased.
+
+============================================
+
+SECURITY PREPARATIONS:
+
+The server can not run as root and will setuid() if possible. 
+Server support chroot(), if your PHP supports it.
+Server can listen on port below 1024, if is started as root, because it setuid() after that.
+Same as root owned log files - setuid() is made after file is open.
+
+Server do demonize, e.g. it fork() and close the standard file descriptors.
+This is implemented, because if server is started without nohup, 
+it unexpectedly stop working 3-4 hours !?!?! after you close shell console.
+I believe this has something to do with stdin.
+
+Security preparations are skipped if you start the server in non-demon mode by using:
+$SERVER_CONFIG["demon"] = true
+
+============================================
+
+SERVER USAGE:
+
+Currently we use the server on one website with web farm of 2 server each processing 8 Mio hits/day.
+
+Webfarm is controlled by nginx webserver as a proxy. This is why I never implemented features such
+- IP restrictions
+- Logging - the log file is not enabled by default and does not include IP address.
+- Checking for many connections from simple IP
+- HTTP/1.1
+- Virtual hosts
+
+You should always use proxy such nginx, Lighttpd or Apache server
+
+============================================
+
+MICRO_HTTPD.MODULES.PHP
+
+Because the server uses PHP modules that are probably not inside the PHP,
+this file is best place to "add" them using dl() function.
+
+============================================
+
+MICRO_HTTPD.CONF.PHP 
+
+Configuration file, I believe it is self-explanatory.
+
+============================================
+
+HOW TO USE IT AND HELLO_WORLD.PHP:
+
+To use the server, you need to define an array called $SERVER_PATH_MATRIX:
+
+$SERVER_PATH_MATRIX = array(
+	"/"		=> "hello_world"	,
+);
+
+In this case, we do http://domain.com/ to start function hello_world().
+Note that http://domain.com/ is different from http://domain.com/index.htm. 
+If you want both, you need to do:
+
+$SERVER_PATH_MATRIX = array(
+	"/"		=> "hello_world"	,
+	"/index.htm"	=> "hello_world"	,
+);
+
+If you hit any address/path that is not defined, you get 404 error.
+Optionally the server will check $SERVER_CONFIG["error_document_404"].
+In case you want no 404 error to be send you can do something like this:
+
+$SERVER_CONFIG["error_document_404"] = "/404.htm";
+
+$SERVER_PATH_MATRIX = array(
+	"/"		=> "hello_world"	,
+	"/index.htm"	=> "hello_world"	,
+	"/404.htm"	=> "hello_world"	,
+);
+
+
+
+Then you need to write the function hello_world():
+
+function hello_world($path, $query_string_parsed, $query_string){
+	return "<p>hello world</p>\n";
+}
+
+Parameters are as following:
+- $path - path, e.g. /index.htm,
+- $query_string_parsed - parsed array, similar to $_GET or $_POST, 
+- $query_string - raw query string such - "a=6&b=hello"
+
+
+
+Function output may be just HTML - then HTTP status 200 OK is assumed.
+
+To do redirects, custom headers or to return different status, 
+you will need to return array:
+
+$data = array(
+	"headers"	=> array("X-User-ID: 12345")    ,
+	"code"		=> 500				,
+	"codetxt"	=> "CRASH"			,
+	"body"		=> "ERR\n"			,
+	"body"		=> "Internal server error\n"
+);
+
+
+
+You may decide to skip conf file, but need to include the "server":
+
+require dirname(__FILE__) . "/micro_httpd.php";
+
+This file immediately will start the server.
+
+============================================
+
+VERSION HISTORY:
+
+1.0	First release, very similar to 1.1, but without setuid(), logfile etc.
+1.1	Adding setuid(), demonize, logfile, changing configuration, 
+	adding "server_" prefix on all functions.
+
+============================================
+
+AUTHOR:
+
+Nikolay Mihaylov
+nmmm at nmmm.nu
+http://nmmm.nu/
+https://github.com/nmmmnu/Micro-HTTPD/
+
+Feel free to contact me.
+
+============================================
+
+LICENCE:
+
+GPL v.3
+http://www.gnu.org/copyleft/gpl.html
+
+If you need commercial licence, please contact me.
+
+
