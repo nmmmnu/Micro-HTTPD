@@ -11,8 +11,9 @@ Based on:
 
 // Version
 
-$server_version      = 1.1;
-$server_version_full = "Micro HTTPD 1.1 / 2011-11-18";
+$server_version      = 1.2;
+$server_version_date = "2011-11-22";
+$server_version_full = "Micro HTTPD $server_version / $server_version_date";
 
 ini_set("max_execution_time", "0");
 ini_set("max_input_time",     "0");
@@ -78,9 +79,9 @@ function server_start(){
 	if ( @$SERVER_CONFIG["demon"] )
 		$SERVER_CONFIG["log_file"] = "php://stdout";
 
-	$fmode = "a";
+	$fmode = "w";
 	if (!@$SERVER_CONFIG["log_file_reset"])
-		$fmode = "w";
+		$fmode = "a";
 
 	$server_log_file = @fopen($SERVER_CONFIG["log_file"], $fmode);
 
@@ -136,8 +137,9 @@ function server_start(){
 
 
 	// Main loop
-
-	$procs = array();
+	global $server_procs;
+	$server_procs = 0;
+//	$server_procs = array();
 
 	while(true){
 		if ( -1 == ($pid = pcntl_fork()) ){
@@ -149,23 +151,21 @@ function server_start(){
 			exit(0);
 		}else{
 			// parent process
-			$procs[$pid] = $pid;
+			$server_procs++;
 
 			server_debug("fork()-ed process $pid");
 		}
 
-		if (count($procs) >= $SERVER_CONFIG["max_workers"]){
+		if ($server_procs >= $SERVER_CONFIG["max_workers"]){
 			if (-1 == ($pid = pcntl_wait($status)))
 				server_log_halt("Can not pcntl_wait()");
 
 			//Returns the return code of a terminated child
 			//$exitStatus = pcntl_wexitstatus($status);
-			unset($procs[$pid]);
+			$server_procs--;
 		}
 
-	//	print_r($procs);
-
-		server_log(count($procs) . " running processes...", 1);
+		server_log("$server_procs running processes...", 1);
 
 		// Give the CPU some time
 		usleep(1000 * 100); // 1000 * 1000 is 1 sec
@@ -186,6 +186,10 @@ function server_child_process($server_socket){
 
 	$req_count     = 0;
 	$req_count_max = (int) @$SERVER_CONFIG["max_request_per_child"];
+	$req_count_tolerance = 20; // %
+
+	// randomize it, because we want server not to fork() all processes at the same time.
+	$req_count_max = $req_count_max + (int) ($req_count_max * rand(0, $req_count_tolerance) / 100);
 
 //	while ($client = @socket_accept($server_socket)){
 	while (true){
@@ -215,7 +219,7 @@ function server_child_process($server_socket){
 			$req_count++;
 
 			if ($req_count > $req_count_max){
-				server_debug("Child performed {$req_count_max} requests and will exit");
+				server_log("Child performed {$req_count_max} requests and will exit", 1);
 				exit;
 			}
 		}
@@ -284,7 +288,7 @@ function request_process($request){
 	
 	$buffer .= $output["body"];    
 
-	server_log("Req: $file, $query_string, {$output["mime"]}, {$output["code"]} {$output["codetxt"]}",2);
+	server_log("Req: $file ? $query_string, {$output["mime"]}, {$output["code"]} {$output["codetxt"]}",2);
 	
 	return $buffer;
 }
