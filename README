@@ -62,6 +62,9 @@ the speed will not be increased.
 SECURITY PREPARATIONS:
 
 The server can not run as root and will setuid() if possible. 
+However because of log rotation, server master will still need as root,
+so setuid() is done only in the children. This is how is done in Apache as well.
+
 Server support chroot(), if your PHP supports it.
 Server can listen on port below 1024, if is started as root, because it setuid() after that.
 Same as root owned log files - setuid() is made after file is open.
@@ -73,6 +76,15 @@ I believe this has something to do with stdin.
 
 Security preparations are skipped if you start the server in non-demon mode by using:
 $SERVER_CONFIG["demon"] = true
+
+============================================
+
+LOG REOPEN:
+
+Server now support log reopen using HUP signal().
+
+This probably slows down the server, but it was nesecery to be implemented,
+because log file got too big and there was not real log, afrter log rotation software do its work.
 
 ============================================
 
@@ -176,6 +188,8 @@ VERSION HISTORY:
 1.0	First release, very similar to 1.1, but without setuid(), logfile etc.
 1.1	Adding setuid(), demonize, logfile, changing configuration, 
 	adding "server_" prefix on all functions.
+1.2	Source cleaning up
+1.2	Log reopen using SIGHUP (2011-12-05)
 
 ============================================
 
