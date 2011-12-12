@@ -9,10 +9,13 @@ Based on:
 
 
 
+// For signal();
+declare(ticks = 1);
+
 // Version
 
 $server_version      = 1.2;
-$server_version_date = "2011-11-22";
+$server_version_date = "2011-12-05";
 $server_version_full = "Micro HTTPD $server_version / $server_version_date";
 
 ini_set("max_execution_time", "0");
@@ -73,17 +76,7 @@ function server_start(){
 
 
 
-	// Create the log file
-	global $server_log_file;
-
-	if ( @$SERVER_CONFIG["demon"] )
-		$SERVER_CONFIG["log_file"] = "php://stdout";
-
-	$fmode = "w";
-	if (!@$SERVER_CONFIG["log_file_reset"])
-		$fmode = "a";
-
-	$server_log_file = @fopen($SERVER_CONFIG["log_file"], $fmode);
+	server_log_open();
 
 
 
@@ -100,7 +93,8 @@ function server_start(){
 
 
 	// Create a socket
-
+	//global $server_socket;
+	
 	if (!($server_socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP)))
 		server_log_halt( socket_strerror(socket_last_error()) );
 
@@ -134,9 +128,17 @@ function server_start(){
 	server_log("$server_version_full started @ $host:$port with {$SERVER_CONFIG["max_workers"]} workers");
 	server_debug("Begin fork() children");
 
+/*
+			server_main_loop();
+		}
 
+		function server_main_loop(){
+			// Main loop
+			global $SERVER_CONFIG;
+*/
+	global $SERVER_MASTER;
+	$SERVER_MASTER = true;
 
-	// Main loop
 	global $server_procs;
 	$server_procs = 0;
 //	$server_procs = array();
@@ -147,6 +149,9 @@ function server_start(){
 			server_log_halt("Can not fork()");
 		}else if ($pid == 0){
 			// child process
+			//global $server_socket;
+			$SERVER_MASTER = false;
+			server_setuid();
 			server_child_process($server_socket);
 			exit(0);
 		}else{
@@ -362,6 +367,35 @@ function server_security_preparation(){
 
 	umask(0);
 
+	// chroot
+	if ($chroot = $SERVER_CONFIG["chroot"]){
+		if ( function_exists("chroot") ){
+			chroot($chroot);
+		//	chdir('/');
+
+			server_log("chroot() to $chroot", 1);
+		}else{
+			server_log("Can not chroot(). Will try live without it.");
+		}
+	}
+
+	if ( $SERVER_CONFIG["chdir"] )
+		chdir( $SERVER_CONFIG["chdir"] );
+
+	//install signal() handler
+	pcntl_signal(SIGHUP,  "server_signal_handler");
+	// ignore USR1
+	pcntl_signal(SIGUSR1, SIG_IGN);
+
+	// Similar to apache, we will keep the master as root, and will setuid children.
+	//server_setuid();
+}
+
+
+
+function server_setuid(){
+	global $SERVER_CONFIG;
+	
 	if ( posix_getuid() == 0 ){
 
 		// GID first...
@@ -386,21 +420,29 @@ function server_security_preparation(){
 			server_log("setuid() to $user", 1);
 		}
 	}
+}
 
-	// chroot
-	if ($chroot = $SERVER_CONFIG["chroot"]){
-		if ( function_exists("chroot") ){
-			chroot($chroot);
-		//	chdir('/');
 
-			server_log("chroot() to $chroot", 1);
-		}else{
-			server_log("Can not chroot(). Will try live without it.");
+
+function server_signal_handler($signo){
+	global $SERVER_MASTER;
+
+	if ($SERVER_MASTER){	
+		switch ($signo){
+			case SIGHUP:
+				server_log("SIGHUP received, reopening log file");
+				server_log_open();
+				return;
 		}
-	}
+		
+	}else{
+	
+		switch ($signo){
+			case SIGHUP:
+				server_log_halt("SIGHUP received, exit");
+		}
 
-	if ( $SERVER_CONFIG["chdir"] )
-		chdir( $SERVER_CONFIG["chdir"] );
+	}
 }
 
 
@@ -408,6 +450,26 @@ function server_security_preparation(){
 // =======================================
 // Log functions
 // =======================================
+
+function server_log_open(){
+	// Create the log file
+	global $SERVER_CONFIG;
+	global $server_log_file;
+	
+	if ($server_log_file)
+		@fclose($server_log_file);
+		
+		
+
+	if ( @$SERVER_CONFIG["demon"] )
+		$SERVER_CONFIG["log_file"] = "php://stdout";
+
+	$fmode = "w";
+	if (!@$SERVER_CONFIG["log_file_reset"])
+		$fmode = "a";
+
+	$server_log_file = @fopen($SERVER_CONFIG["log_file"], $fmode);
+}
 
 function server_log($message, $level = 0){
 	global $SERVER_CONFIG;
